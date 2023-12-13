@@ -2,21 +2,18 @@ defmodule Electric.Plug.Migrations do
   use Plug.Router
   use Electric.Satellite.Protobuf
 
-  alias Electric.Postgres.Extension.SchemaCache
-
-  import Plug.Conn
+  alias Electric.Postgres.Extension.{SchemaCache, SchemaLoader}
 
   require Logger
 
-  plug(:match)
+  plug :match
 
-  plug(Plug.Parsers,
+  plug Plug.Parsers,
     parsers: [:json],
     pass: ["application/json"],
     json_decoder: Jason
-  )
 
-  plug(:dispatch)
+  plug :dispatch
 
   get "/" do
     conn = fetch_query_params(conn)
@@ -109,8 +106,10 @@ defmodule Electric.Plug.Migrations do
 
   defp translate_stmts(version, schema, stmts, dialect) do
     Enum.flat_map(stmts, fn stmt ->
+      schema_version = SchemaLoader.Version.new(version, schema)
+
       {:ok, msgs, _relations} =
-        Electric.Postgres.Replication.migrate(schema, version, stmt, dialect)
+        Electric.Postgres.Replication.migrate(schema_version, stmt, dialect)
 
       msgs
     end)
