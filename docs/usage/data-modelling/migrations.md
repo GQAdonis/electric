@@ -214,6 +214,8 @@ There are two environment variables that configure the proxy in Electric:
 
 - `PG_PROXY_PORT` (default `65432`). This is the TCP port that [**Electric sync service**](../../api/service.md) will listen on. You should connect to it in order to pass through the migration proxy. Since the proxy speaks fluent Postgres, you can connect to it via any Postgres-compatible tool, e.g. `psql -U electric -p 65432 electric`
 
+   Some deployment targets restrict you to a single port for your service. On these platforms, `PG_PROXY_PORT` can be set to a special `http` value. This enables the use of the [Proxy Tunnel](../../api/cli.md#proxy-tunnel). Additionally, to set both the TCP port and enable the Proxy Tunnel, use a value such as `http:65432`.
+
 - `PG_PROXY_PASSWORD` (no default). Access to the proxy is controlled by password (see below for information on the username). You must set this password here and pass it to any application hoping to connect to the proxy.
 
 You should be able to connect to the proxy directly using `psql` as outlined above and run any DDLX/migration commands you like. These will be validated, captured, and streamed to any connected clients automatically:
@@ -267,6 +269,12 @@ In practice this means that we only support this subset of DDL actions:
 - `CREATE TABLE` and its associated `ALTER TABLE <table name> ENABLE ELECTRIC` call,
 - `ALTER TABLE <electrified table> ADD COLUMN`, and
 - `CREATE INDEX ON <electrified table>`, `DROP INDEX` -- indexes can be created and dropped because they don't affect the data within the electrified tables.
+
+### No default values for columns
+
+Currently it's not possible to electrify tables that have columns with `DEFAULT` clauses. This has to do with the fact that those clauses may include Postgres expressions that are difficult or impossible to translate into an SQLite-compatible one.
+
+We will lift this limitation at some point, e.g. by discarding `DEFAULT` clauses in the SQLite schema or by supporting a limited set of default expressions.
 
 ### Data types and constraints
 
