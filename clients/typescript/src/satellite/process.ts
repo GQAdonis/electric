@@ -4,7 +4,12 @@ import {
   SatOpMigrate_Type,
   SatRelation_RelationType,
 } from '../_generated/protocol/satellite'
-import { AuthConfig, AuthState } from '../auth/index'
+import {
+  AuthConfig,
+  AuthCredentials,
+  AuthState,
+  AuthStatus,
+} from '../auth/index'
 import { DatabaseAdapter } from '../electric/adapter'
 import { Migrator } from '../migrators/index'
 import {
@@ -219,7 +224,11 @@ export class SatelliteProcess implements Satellite {
       authConfig.clientId && authConfig.clientId !== ''
         ? authConfig.clientId
         : await this._getClientId()
-    await this._setAuthState({ clientId: clientId, token: authConfig.token })
+    await this._setAuthState({
+      clientId: clientId,
+      token: authConfig.token,
+      status: AuthStatus.UNAUTHENTICATED,
+    })
 
     const notifierSubscriptions = Object.entries({
       _authStateSubscription: this._unsubscribeFromAuthState,
@@ -625,7 +634,7 @@ export class SatelliteProcess implements Satellite {
     }
   }
 
-  // handles async client erros: can be a socket error or a server error message
+  // handles async client errors: can be a socket error or a server error message
   _handleClientError(satelliteError: SatelliteError) {
     if (this.initializing && !this.initializing.finished()) {
       if (satelliteError.code === SatelliteErrorCode.SOCKET_ERROR) {
@@ -652,9 +661,16 @@ export class SatelliteProcess implements Satellite {
     this._handleOrThrowClientError(satelliteError)
   }
 
-  _handleOrThrowClientError(error: SatelliteError): Promise<void> {
+  async _handleOrThrowClientError(error: SatelliteError): Promise<void> {
     this._disconnect()
 
+    if (error.code === SatelliteErrorCode.AUTH_EXPIRED) {
+      this._notifyAuthStatusChange(AuthStatus.EXPIRED)
+      // don't throw, we signaled the JWT expiration
+      // we don't try to reconnect because the JWT has expired
+      // the user will have to renew the JWT first
+      return
+    }
     if (isThrowable(error)) {
       throw error
     }
@@ -748,17 +764,34 @@ export class SatelliteProcess implements Satellite {
 
     try {
       await this.client.connect()
-      const authResp = await this.client.authenticate(authState)
-
-      if (authResp.error) {
-        throw authResp.error
-      }
+      await this._authenticate(authState)
     } catch (error: any) {
       Log.debug(
         `server returned an error while establishing connection: ${error.message}`
       )
       throw error
     }
+  }
+
+  /**
+   * Authenticates with the Electric sync service using the provided auth state.
+   * @returns A promise that resolves to void if authentication succeeded. Otherwise, rejects with the reason for the error.
+   */
+  private async _authenticate(authState: AuthCredentials): Promise<void> {
+    this._notifyAuthStatusChange(AuthStatus.AUTHENTICATING)
+    const authResp = await this.client.authenticate(authState)
+    if (authResp.error) {
+      this._notifyAuthStatusChange(AuthStatus.UNAUTHENTICATED)
+      throw authResp.error
+    }
+    this._notifyAuthStatusChange(AuthStatus.AUTHENTICATED)
+  }
+
+  private _notifyAuthStatusChange(status: AuthStatus): void {
+    if (!this._authState) {
+      throw new Error(`trying to set auth status before setting credentials`)
+    }
+    this.notifier.authStateChanged({ ...this._authState, status })
   }
 
   private _disconnect(): void {
