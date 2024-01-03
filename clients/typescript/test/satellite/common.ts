@@ -189,7 +189,7 @@ export const relations = {
 
 import migrations from '../support/migrations/migrations.js'
 import { ExecutionContext } from 'ava'
-import { AuthCredentials } from '../../src/auth'
+import { AuthState } from '../../src/auth'
 import { DbSchema, TableSchema } from '../../src/client/model/schema'
 import { PgBasicType } from '../../src/client/conversions/types'
 import { HKT } from '../../src/client/util/hkt'
@@ -220,7 +220,7 @@ export type ContextType<Extra = {}> = {
   runMigrations: () => Promise<void>
   tableInfo: TableInfo
   timestamp: number
-  authState: AuthCredentials
+  authState: AuthState
 } & Extra
 
 export const makeContext = async (
